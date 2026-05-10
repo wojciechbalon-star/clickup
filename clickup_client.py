@@ -1,6 +1,5 @@
 import os
 import requests
-from typing import Optional
 
 BASE_URL = "https://api.clickup.com/api/v2"
 
@@ -14,7 +13,7 @@ def get_tasks(team_id: str, user_id: int, page: int = 0) -> list[dict]:
         f"{BASE_URL}/team/{team_id}/task",
         headers=_headers(),
         params={
-            "assignees[]": user_id,
+            "assignees[]": str(user_id),
             "include_closed": "true",
             "subtasks": "true",
             "page": page,
