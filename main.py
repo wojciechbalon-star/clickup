@@ -32,8 +32,8 @@ def _fetch_raw() -> dict:
         return cached
 
     tasks = clickup_client.get_all_tasks(TEAM_ID, USER_ID)
-    activity = {t["id"]: clickup_client.get_task_activity(t["id"]) for t in tasks}
-    payload = {"tasks": tasks, "activity": activity}
+    handoffs = {t["id"]: clickup_client.get_handoff_ms(t["id"]) for t in tasks}
+    payload = {"tasks": tasks, "handoffs": handoffs}
     cache.save_cache(payload)
     return payload
 
@@ -57,11 +57,9 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
         tm = m.calculate_task_metrics(
             task_id=task["id"],
             task_name=task["name"],
-            due_date_ms=task.get("due_date"),
-            events=raw["activity"].get(task["id"], []),
-            user_id=USER_ID,
+            deadline_ms=clickup_client.get_deadline_ms(task),
+            handoff_ms=raw["handoffs"].get(task["id"]),
         )
-        # Filter by first_handoff date (or deadline for excluded tasks)
         ref_date = tm.first_handoff or tm.deadline
         if ref_date and not (filter_start <= ref_date <= filter_end):
             continue

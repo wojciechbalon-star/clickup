@@ -15,8 +15,8 @@
     .filters a.active { background: #7c3aed; color: #fff; }
     .filters input[type=date] { padding: 5px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.875rem; }
     .refresh { margin-left: auto; padding: 6px 14px; background: #7c3aed; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.875rem; }
-    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 24px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 24px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
     .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     .card h2 { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-bottom: 8px; }
     .stat { font-size: 2rem; font-weight: 700; margin-bottom: 4px; }
@@ -73,15 +73,6 @@
     </div>
   </div>
 
-  <!-- Iteracje -->
-  <div class="card">
-    <h2>Iteracje</h2>
-    <div class="stat">{{ summary.avg_iterations }}</div>
-    <div class="stat-sub">średnia | maks. {{ summary.max_iterations }}</div>
-    <div class="chart-wrap">
-      <canvas id="chartIter"></canvas>
-    </div>
-  </div>
 </div>
 
 <!-- Tabela zadań -->
@@ -92,7 +83,6 @@
       <th onclick="sortTable(1)">Deadline ↕</th>
       <th onclick="sortTable(2)">Handoff ↕</th>
       <th onclick="sortTable(3)">Opóźnienie ↕</th>
-      <th onclick="sortTable(4)">Iteracje ↕</th>
       <th>Status</th>
     </tr>
   </thead>
@@ -107,7 +97,6 @@
           {{ '%+.1f'|format(t.delay_days) }}d
         {% else %}—{% endif %}
       </td>
-      <td>{{ t.iterations if not t.excluded else '—' }}</td>
       <td>
         {% if t.excluded %}
           <span class="badge badge-warn">⚠ {{ t.exclusion_reason }}</span>
@@ -126,7 +115,6 @@
 const onTimeData = {{ summary.on_time_count }};
 const lateData = {{ summary.late_count }};
 const delayBuckets = {{ summary.delay_buckets | tojson }};
-const iterBuckets = {{ summary.iter_buckets | tojson }};
 
 new Chart(document.getElementById('chartOnTime'), {
   type: 'pie',
@@ -147,15 +135,6 @@ new Chart(document.getElementById('chartDelay'), {
     scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
 });
 
-new Chart(document.getElementById('chartIter'), {
-  type: 'bar',
-  data: {
-    labels: iterBuckets.map(b => b.label),
-    datasets: [{ label: 'Zadania', data: iterBuckets.map(b => b.count), backgroundColor: '#818cf8' }]
-  },
-  options: { plugins: { legend: { display: false } }, responsive: true, maintainAspectRatio: false,
-    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
-});
 
 // Sortable table
 let sortDir = {};

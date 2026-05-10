@@ -1,7 +1,10 @@
 import os
 import requests
+from typing import Optional
 
 BASE_URL = "https://api.clickup.com/api/v2"
+HANDOFF_STATUS = "internal review"
+DEADLINE_FIELD_ID = "57f7db78-056c-4a9c-94f9-d19db5576f30"
 
 
 def _headers() -> dict:
@@ -35,21 +38,35 @@ def get_all_tasks(team_id: str, user_id: int) -> list[dict]:
     return tasks
 
 
-def get_task_activity(task_id: str) -> list[dict]:
-    """
-    Returns assignment-change events for a task.
-    Each event: {"field": "assignee", "date": <unix_ms_str>, "before": {"id": ...}, "after": {"id": ...}}
+def get_deadline_ms(task: dict) -> Optional[str]:
+    """Extract deadline from custom field 'Deadline [all]'."""
+    for cf in task.get("custom_fields", []):
+        if cf.get("id") == DEADLINE_FIELD_ID:
+            value = cf.get("value")
+            return str(value) if value is not None else None
+    return None
 
-    ClickUp API shape varies by plan. If this returns empty for known tasks,
-    print resp.json() and find where assignment history lives, then update this function.
+
+def get_handoff_ms(task_id: str) -> Optional[str]:
+    """
+    Returns Unix ms timestamp (as str) when task first entered HANDOFF_STATUS.
+    Uses time_in_status endpoint — 'since' field = when that status was entered.
     """
     resp = requests.get(
-        f"{BASE_URL}/task/{task_id}",
+        f"{BASE_URL}/task/{task_id}/time_in_status",
         headers=_headers(),
-        params={"include_task_history": "true"},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        return None
     data = resp.json()
-    history = data.get("history") or data.get("activity") or []
-    return [e for e in history if e.get("field") == "assignee"]
+
+    current = data.get("current_status", {})
+    if current.get("status", "").lower() == HANDOFF_STATUS:
+        return current.get("total_time", {}).get("since")
+
+    for entry in data.get("status_history", []):
+        if entry.get("status", "").lower() == HANDOFF_STATUS:
+            return entry.get("total_time", {}).get("since")
+
+    return None
