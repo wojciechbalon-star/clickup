@@ -22,7 +22,9 @@
     .stat { font-size: 2rem; font-weight: 700; margin-bottom: 4px; }
     .stat-sub { font-size: 0.85rem; color: #888; margin-bottom: 16px; }
     .chart-wrap { position: relative; height: 180px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin: 0 24px 24px; width: calc(100% - 48px); }
+    table { width: calc(100% - 48px); border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin: 0 24px 24px; }
+    .date-form { display: flex; gap: 6px; align-items: center; }
+    .btn-apply { padding: 6px 12px; background: #eee; border: none; border-radius: 6px; cursor: pointer; font-size: .875rem; }
     th { padding: 12px 16px; text-align: left; font-size: 0.8rem; text-transform: uppercase; letter-spacing: .05em; color: #888; border-bottom: 1px solid #eee; cursor: pointer; user-select: none; }
     th:hover { background: #fafafa; }
     td { padding: 12px 16px; font-size: 0.875rem; border-bottom: 1px solid #f0f0f0; }
@@ -41,10 +43,10 @@
   <div class="filters">
     <a href="/?days=30" class="{{ 'active' if days == 30 and not start else '' }}">30 dni</a>
     <a href="/?days=90" class="{{ 'active' if days == 90 and not start else '' }}">90 dni</a>
-    <form method="get" action="/" style="display:flex;gap:6px;align-items:center;">
-      <input type="date" name="start" value="{{ start }}" required>
-      <input type="date" name="end" value="{{ end }}" required>
-      <button type="submit" style="padding:6px 12px;background:#eee;border:none;border-radius:6px;cursor:pointer;font-size:.875rem;">Zastosuj</button>
+    <form method="get" action="/" class="date-form">
+      <input type="date" name="start" value="{{ start }}" aria-label="Data od" required>
+      <input type="date" name="end" value="{{ end }}" aria-label="Data do" required>
+      <button type="submit" class="btn-apply">Zastosuj</button>
     </form>
   </div>
   <a href="/api/refresh" class="refresh">Odśwież dane</a>
