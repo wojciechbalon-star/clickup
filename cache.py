@@ -10,10 +10,13 @@ CACHE_TTL = 15 * 60  # seconds
 def load_cache() -> Optional[dict]:
     if not CACHE_FILE.exists():
         return None
-    data = json.loads(CACHE_FILE.read_text())
-    if time.time() - data["timestamp"] > CACHE_TTL:
+    try:
+        data = json.loads(CACHE_FILE.read_text())
+        if time.time() - data["timestamp"] > CACHE_TTL:
+            return None
+        return data["payload"]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return None
-    return data["payload"]
 
 
 def save_cache(payload: dict) -> None:

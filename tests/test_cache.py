@@ -30,3 +30,8 @@ def test_clear_removes_file():
     cache.save_cache({"tasks": []})
     cache.clear_cache()
     assert cache.load_cache() is None
+
+
+def test_load_returns_none_when_corrupt():
+    cache.CACHE_FILE.write_text("not valid json")
+    assert cache.load_cache() is None
