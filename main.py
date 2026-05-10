@@ -93,3 +93,16 @@ async def dashboard(
 async def refresh():
     cache.clear_cache()
     return RedirectResponse(url="/")
+
+
+@app.get("/api/debug-task/{task_id}")
+async def debug_task(task_id: str):
+    import requests as req
+    headers = {"Authorization": os.environ["CLICKUP_TOKEN"]}
+    r = req.get(
+        f"https://api.clickup.com/api/v2/task/{task_id}",
+        headers=headers,
+        params={"include_task_history": "true"},
+        timeout=15,
+    )
+    return {"status": r.status_code, "keys": list(r.json().keys()), "full": r.json()}
