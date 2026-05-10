@@ -18,6 +18,10 @@ load_dotenv()
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
+_missing = [v for v in ("CLICKUP_TEAM_ID", "CLICKUP_USER_ID", "CLICKUP_TOKEN") if not os.environ.get(v)]
+if _missing:
+    raise SystemExit(f"Missing required env vars: {', '.join(_missing)}")
+
 TEAM_ID = os.environ["CLICKUP_TEAM_ID"]
 USER_ID = int(os.environ["CLICKUP_USER_ID"])
 
@@ -39,8 +43,11 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
 
     now = datetime.now(tz=timezone.utc)
     if start and end:
-        filter_start = datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
-        filter_end = datetime.fromisoformat(end).replace(tzinfo=timezone.utc)
+        def _parse_date(s: str) -> datetime:
+            dt = datetime.fromisoformat(s)
+            return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        filter_start = _parse_date(start)
+        filter_end = _parse_date(end)
     else:
         filter_start = now - timedelta(days=days)
         filter_end = now
