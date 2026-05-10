@@ -1,0 +1,88 @@
+# main.py
+import os
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.requests import Request
+
+import cache
+import clickup_client
+import metrics as m
+
+load_dotenv()
+
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+TEAM_ID = os.environ["CLICKUP_TEAM_ID"]
+USER_ID = int(os.environ["CLICKUP_USER_ID"])
+
+
+def _fetch_raw() -> dict:
+    cached = cache.load_cache()
+    if cached:
+        return cached
+
+    tasks = clickup_client.get_all_tasks(TEAM_ID, USER_ID)
+    activity = {t["id"]: clickup_client.get_task_activity(t["id"]) for t in tasks}
+    payload = {"tasks": tasks, "activity": activity}
+    cache.save_cache(payload)
+    return payload
+
+
+def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple[list, m.Summary]:
+    raw = _fetch_raw()
+
+    now = datetime.now(tz=timezone.utc)
+    if start and end:
+        filter_start = datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
+        filter_end = datetime.fromisoformat(end).replace(tzinfo=timezone.utc)
+    else:
+        filter_start = now - timedelta(days=days)
+        filter_end = now
+
+    task_metrics = []
+    for task in raw["tasks"]:
+        tm = m.calculate_task_metrics(
+            task_id=task["id"],
+            task_name=task["name"],
+            due_date_ms=task.get("due_date"),
+            events=raw["activity"].get(task["id"], []),
+            user_id=USER_ID,
+        )
+        # Filter by first_handoff date (or deadline for excluded tasks)
+        ref_date = tm.first_handoff or tm.deadline
+        if ref_date and not (filter_start <= ref_date <= filter_end):
+            continue
+        task_metrics.append(tm)
+
+    summary = m.calculate_summary(task_metrics)
+    return task_metrics, summary
+
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(
+    request: Request,
+    days: int = Query(default=30),
+    start: Optional[str] = Query(default=None),
+    end: Optional[str] = Query(default=None),
+):
+    task_metrics, summary = _build_metrics(days, start, end)
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "summary": summary,
+        "tasks": task_metrics,
+        "days": days,
+        "start": start or "",
+        "end": end or "",
+    })
+
+
+@app.get("/api/refresh")
+async def refresh():
+    cache.clear_cache()
+    return RedirectResponse(url="/")
