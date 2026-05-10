@@ -100,9 +100,8 @@ async def debug_task(task_id: str):
     import requests as req
     headers = {"Authorization": os.environ["CLICKUP_TOKEN"]}
     r = req.get(
-        f"https://api.clickup.com/api/v2/task/{task_id}",
+        f"https://api.clickup.com/api/v2/task/{task_id}/time_in_status",
         headers=headers,
-        params={"include_task_history": "true"},
         timeout=15,
     )
-    return {"status": r.status_code, "keys": list(r.json().keys()), "full": r.json()}
+    return {"status": r.status_code, "full": r.json()}
