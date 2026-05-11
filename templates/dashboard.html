@@ -83,12 +83,14 @@
       <th onclick="sortTable(1)">Deadline ↕</th>
       <th onclick="sortTable(2)">Handoff ↕</th>
       <th onclick="sortTable(3)">Opóźnienie ↕</th>
+      <th onclick="sortTable(4)">Iteracje ↕</th>
+      <th>Komentarz do iteracji</th>
       <th>Status</th>
     </tr>
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr class="{{ 'excluded' if t.excluded else '' }}">
+    <tr class="{{ 'excluded' if t.excluded else '' }}" data-task-id="{{ t.task_id }}">
       <td>{{ t.task_name }}</td>
       <td>{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
       <td>{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
@@ -97,6 +99,8 @@
           {{ '%+.1f'|format(t.delay_days) }}d
         {% else %}—{% endif %}
       </td>
+      <td><input type="number" min="0" class="iter-input" data-field="iter" placeholder="0" style="width:56px;padding:3px 6px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;text-align:center;"></td>
+      <td><input type="text" class="iter-input" data-field="comment" placeholder="Wpisz komentarz…" style="width:100%;padding:3px 8px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;"></td>
       <td>
         {% if t.excluded %}
           <span class="badge badge-warn">⚠ {{ t.exclusion_reason }}</span>
@@ -135,6 +139,21 @@ new Chart(document.getElementById('chartDelay'), {
     scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
 });
 
+
+// Iteracje + komentarze — localStorage
+function noteKey(taskId, field) { return `cu_${taskId}_${field}`; }
+
+document.querySelectorAll('tr[data-task-id]').forEach(row => {
+  const taskId = row.dataset.taskId;
+  row.querySelectorAll('.iter-input').forEach(input => {
+    const field = input.dataset.field;
+    const saved = localStorage.getItem(noteKey(taskId, field));
+    if (saved !== null) input.value = saved;
+    input.addEventListener('input', () => {
+      localStorage.setItem(noteKey(taskId, field), input.value);
+    });
+  });
+});
 
 // Sortable table
 let sortDir = {};
