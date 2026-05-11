@@ -5,12 +5,13 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 
 import cache
 import clickup_client
+import db
 import metrics as m
 
 load_dotenv()
@@ -24,6 +25,8 @@ if _missing:
 
 TEAM_ID = os.environ["CLICKUP_TEAM_ID"]
 USER_ID = int(os.environ["CLICKUP_USER_ID"])
+
+db.init_db()
 
 
 def _fetch_raw() -> dict:
@@ -69,6 +72,8 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
     return task_metrics, summary
 
 
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
@@ -77,10 +82,12 @@ async def dashboard(
     end: Optional[str] = Query(default=None),
 ):
     task_metrics, summary = _build_metrics(days, start, end)
+    notes = {t.task_id: db.get_note(t.task_id) for t in task_metrics}
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "summary": summary,
         "tasks": task_metrics,
+        "notes": notes,
         "days": days,
         "start": start or "",
         "end": end or "",
@@ -93,23 +100,61 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
-@app.get("/api/debug-task/{task_id}")
-async def debug_task(task_id: str):
-    import requests as req
-    headers = {"Authorization": os.environ["CLICKUP_TOKEN"]}
-    comments = req.get(
-        f"https://api.clickup.com/api/v2/task/{task_id}/comment",
-        headers=headers, timeout=15,
-    ).json()
-    task_history = req.get(
-        f"https://api.clickup.com/api/v2/task/{task_id}",
-        headers=headers,
-        params={"include_task_history": "true", "include_subtasks": "true"},
-        timeout=15,
-    ).json()
-    return {
-        "comment_count": len(comments.get("comments", [])),
-        "comments": comments.get("comments", [])[:10],
-        "task_history_keys": list(task_history.keys()),
-        "has_history_key": "history" in task_history,
-    }
+# ── Notatki (iteracje + komentarz) ────────────────────────────────────────────
+
+@app.post("/api/notes/{task_id}")
+async def save_note(task_id: str, request: Request):
+    body = await request.json()
+    iterations = body.get("iterations")
+    comment = body.get("comment")
+    db.save_manual(
+        task_id,
+        iterations=int(iterations) if iterations is not None else None,
+        comment=comment,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/notes/{task_id}/iterations")
+async def clear_manual_iterations(task_id: str):
+    """Przywróć wartość automatyczną (usuń manual override)."""
+    db.save_manual(task_id, iterations=None, comment=None)
+    import sqlite3
+    with sqlite3.connect(db.DB_PATH) as conn:
+        conn.execute("UPDATE task_notes SET manual_iterations=NULL WHERE task_id=?", (task_id,))
+    return {"ok": True}
+
+
+# ── Webhook ClickUp ───────────────────────────────────────────────────────────
+
+@app.post("/webhooks/clickup")
+async def clickup_webhook(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+
+    for item in payload.get("history_items", []):
+        task_id = item.get("parent_id") or payload.get("task_id")
+        before = item.get("before") or {}
+        after = item.get("after") or {}
+        before_id = before.get("id")
+        after_id = after.get("id")
+
+        if task_id:
+            db.process_assignee_event(
+                task_id=str(task_id),
+                before_id=int(before_id) if before_id is not None else None,
+                after_id=int(after_id) if after_id is not None else None,
+                user_id=USER_ID,
+            )
+
+    return {"ok": True}
+
+
+@app.get("/api/setup-webhook")
+async def setup_webhook(app_url: str = Query(..., description="Pełny URL aplikacji, np. https://xxx.onrender.com")):
+    """Jednorazowa rejestracja webhooka w ClickUp. Wywołaj raz po deployu."""
+    endpoint = f"{app_url.rstrip('/')}/webhooks/clickup"
+    result = clickup_client.register_webhook(TEAM_ID, endpoint)
+    return result

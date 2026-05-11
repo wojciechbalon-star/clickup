@@ -90,7 +90,11 @@
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr class="{{ 'excluded' if t.excluded else '' }}" data-task-id="{{ t.task_id }}">
+    {% set note = notes[t.task_id] %}
+    {% set iter_val = note.manual_iterations if note.manual_iterations is not none else note.auto_iterations %}
+    {% set is_manual = note.manual_iterations is not none %}
+    <tr class="{{ 'excluded' if t.excluded else '' }}" data-task-id="{{ t.task_id }}"
+        data-auto-iter="{{ note.auto_iterations }}">
       <td>{{ t.task_name }}</td>
       <td>{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
       <td>{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
@@ -99,8 +103,17 @@
           {{ '%+.1f'|format(t.delay_days) }}d
         {% else %}—{% endif %}
       </td>
-      <td><input type="number" min="0" class="iter-input" data-field="iter" placeholder="0" style="width:56px;padding:3px 6px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;text-align:center;"></td>
-      <td><input type="text" class="iter-input" data-field="comment" placeholder="Wpisz komentarz…" style="width:100%;padding:3px 8px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;"></td>
+      <td style="white-space:nowrap;">
+        <input type="number" min="0" class="note-iter"
+               value="{{ iter_val }}"
+               style="width:52px;padding:3px 6px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;text-align:center;{{ 'background:#fffbe6;' if is_manual else '' }}"
+               title="{{ 'ręczne (kliknij 2x żeby przywrócić auto)' if is_manual else 'auto (z webhooka)' }}">
+        <span class="iter-badge" style="font-size:.7rem;color:{{ '#b45309' if is_manual else '#888' }};margin-left:2px;">{{ 'ręczne' if is_manual else 'auto' }}</span>
+      </td>
+      <td><input type="text" class="note-comment"
+                 value="{{ note.comment }}"
+                 placeholder="Komentarz…"
+                 style="width:100%;padding:3px 8px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;"></td>
       <td>
         {% if t.excluded %}
           <span class="badge badge-warn">⚠ {{ t.exclusion_reason }}</span>
@@ -140,19 +153,48 @@ new Chart(document.getElementById('chartDelay'), {
 });
 
 
-// Iteracje + komentarze — localStorage
-function noteKey(taskId, field) { return `cu_${taskId}_${field}`; }
+// Iteracje + komentarze — zapis do /api/notes/{task_id}
+let saveTimer = {};
 
-document.querySelectorAll('tr[data-task-id]').forEach(row => {
-  const taskId = row.dataset.taskId;
-  row.querySelectorAll('.iter-input').forEach(input => {
-    const field = input.dataset.field;
-    const saved = localStorage.getItem(noteKey(taskId, field));
-    if (saved !== null) input.value = saved;
-    input.addEventListener('input', () => {
-      localStorage.setItem(noteKey(taskId, field), input.value);
+function saveNote(taskId) {
+  clearTimeout(saveTimer[taskId]);
+  saveTimer[taskId] = setTimeout(() => {
+    const row = document.querySelector(`tr[data-task-id="${taskId}"]`);
+    const iterInput = row.querySelector('.note-iter');
+    const commentInput = row.querySelector('.note-comment');
+    const iterVal = iterInput.value !== '' ? parseInt(iterInput.value) : null;
+    fetch(`/api/notes/${taskId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({iterations: iterVal, comment: commentInput.value}),
+    }).then(() => {
+      const badge = row.querySelector('.iter-badge');
+      if (badge) { badge.textContent = 'ręczne'; badge.style.color = '#b45309'; }
+      iterInput.style.background = '#fffbe6';
+      iterInput.title = 'ręczne (kliknij 2x żeby przywrócić auto)';
+    });
+  }, 600);
+}
+
+// Podwójne kliknięcie na iteracje → przywróć wartość auto
+document.querySelectorAll('.note-iter').forEach(input => {
+  input.addEventListener('dblclick', () => {
+    const row = input.closest('tr');
+    const taskId = row.dataset.taskId;
+    const autoVal = row.dataset.autoIter;
+    fetch(`/api/notes/${taskId}/iterations`, {method: 'DELETE'}).then(() => {
+      input.value = autoVal;
+      input.style.background = '';
+      input.title = 'auto (z webhooka)';
+      const badge = row.querySelector('.iter-badge');
+      if (badge) { badge.textContent = 'auto'; badge.style.color = '#888'; }
     });
   });
+  input.addEventListener('input', () => saveNote(input.closest('tr').dataset.taskId));
+});
+
+document.querySelectorAll('.note-comment').forEach(input => {
+  input.addEventListener('input', () => saveNote(input.closest('tr').dataset.taskId));
 });
 
 // Sortable table

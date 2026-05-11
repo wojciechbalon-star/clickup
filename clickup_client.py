@@ -47,6 +47,16 @@ def get_deadline_ms(task: dict) -> Optional[str]:
     return None
 
 
+def register_webhook(team_id: str, endpoint_url: str) -> dict:
+    resp = requests.post(
+        f"{BASE_URL}/team/{team_id}/webhook",
+        headers=_headers(),
+        json={"endpoint": endpoint_url, "events": ["taskAssigneeUpdated"]},
+        timeout=15,
+    )
+    return resp.json()
+
+
 def get_handoff_ms(task_id: str) -> Optional[str]:
     """
     Returns Unix ms timestamp (as str) when task first entered HANDOFF_STATUS.
