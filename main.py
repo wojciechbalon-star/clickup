@@ -103,6 +103,11 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
+@app.get("/api/notes/{task_id}")
+async def get_note(task_id: str):
+    return db.get_note(task_id)
+
+
 # ── Notatki (iteracje + komentarz) ────────────────────────────────────────────
 
 @app.post("/api/notes/{task_id}")
