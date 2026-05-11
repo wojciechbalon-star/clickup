@@ -10,12 +10,11 @@ def init_db() -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS task_notes (
-                task_id          TEXT    PRIMARY KEY,
-                auto_iterations  INTEGER DEFAULT 0,
+                task_id           TEXT    PRIMARY KEY,
+                auto_iterations   INTEGER DEFAULT 0,
                 manual_iterations INTEGER,
-                comment          TEXT    DEFAULT '',
-                handoff_done     INTEGER DEFAULT 0,
-                updated_at       REAL    DEFAULT 0
+                comment           TEXT    DEFAULT '',
+                updated_at        REAL    DEFAULT 0
             )
         """)
 
@@ -23,7 +22,7 @@ def init_db() -> None:
 def get_note(task_id: str) -> dict:
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute(
-            "SELECT auto_iterations, manual_iterations, comment, handoff_done "
+            "SELECT auto_iterations, manual_iterations, comment "
             "FROM task_notes WHERE task_id=?",
             (task_id,),
         ).fetchone()
@@ -32,9 +31,8 @@ def get_note(task_id: str) -> dict:
             "auto_iterations":   row[0],
             "manual_iterations": row[1],
             "comment":           row[2] or "",
-            "handoff_done":      bool(row[3]),
         }
-    return {"auto_iterations": 0, "manual_iterations": None, "comment": "", "handoff_done": False}
+    return {"auto_iterations": 0, "manual_iterations": None, "comment": ""}
 
 
 def effective_iterations(note: dict) -> int:
@@ -64,28 +62,13 @@ def save_manual(task_id: str, iterations: Optional[int], comment: Optional[str])
 
 def process_assignee_event(task_id: str, before_id: Optional[int],
                            after_id: Optional[int], user_id: int) -> None:
-    """
-    Called on every taskAssigneeUpdated webhook event.
-    - User hands off (before=user, after=other)  → mark handoff_done
-    - Task returns to user after handoff          → auto_iterations + 1
-    """
-    note = get_note(task_id)
-    now = time.time()
-
-    with sqlite3.connect(DB_PATH) as conn:
-        if before_id == user_id and after_id is not None and after_id != user_id:
-            conn.execute("""
-                INSERT INTO task_notes (task_id, handoff_done, updated_at)
-                VALUES (?, 1, ?)
-                ON CONFLICT(task_id) DO UPDATE SET
-                    handoff_done = 1, updated_at = excluded.updated_at
-            """, (task_id, now))
-
-        elif after_id == user_id and note["handoff_done"]:
+    """Liczy każdy reassign OD użytkownika DO kogoś innego."""
+    if before_id == user_id and after_id is not None and after_id != user_id:
+        with sqlite3.connect(DB_PATH) as conn:
             conn.execute("""
                 INSERT INTO task_notes (task_id, auto_iterations, updated_at)
                 VALUES (?, 1, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     auto_iterations = auto_iterations + 1,
-                    updated_at = excluded.updated_at
-            """, (task_id, now))
+                    updated_at      = excluded.updated_at
+            """, (task_id, time.time()))
