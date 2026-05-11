@@ -97,9 +97,19 @@ async def refresh():
 async def debug_task(task_id: str):
     import requests as req
     headers = {"Authorization": os.environ["CLICKUP_TOKEN"]}
-    r = req.get(
-        f"https://api.clickup.com/api/v2/task/{task_id}/time_in_status",
+    comments = req.get(
+        f"https://api.clickup.com/api/v2/task/{task_id}/comment",
+        headers=headers, timeout=15,
+    ).json()
+    task_history = req.get(
+        f"https://api.clickup.com/api/v2/task/{task_id}",
         headers=headers,
+        params={"include_task_history": "true", "include_subtasks": "true"},
         timeout=15,
-    )
-    return {"status": r.status_code, "full": r.json()}
+    ).json()
+    return {
+        "comment_count": len(comments.get("comments", [])),
+        "comments": comments.get("comments", [])[:10],
+        "task_history_keys": list(task_history.keys()),
+        "has_history_key": "history" in task_history,
+    }
