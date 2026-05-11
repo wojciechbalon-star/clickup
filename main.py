@@ -1,4 +1,7 @@
 # main.py
+import hashlib
+import hmac
+import json
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -129,8 +132,17 @@ async def clear_manual_iterations(task_id: str):
 
 @app.post("/webhooks/clickup")
 async def clickup_webhook(request: Request):
+    body = await request.body()
+
+    secret = os.environ.get("CLICKUP_WEBHOOK_SECRET", "")
+    if secret:
+        signature = request.headers.get("X-Signature", "")
+        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
+
     try:
-        payload = await request.json()
+        payload = json.loads(body)
     except Exception:
         return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
 
