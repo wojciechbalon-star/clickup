@@ -121,61 +121,6 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
-@app.get("/api/debug-task/{task_id}")
-async def debug_task(task_id: str):
-    """Diagnostic: fetch raw task data from ClickUp and check why it may not appear in dashboard."""
-    task = clickup_client.get_task(task_id)
-    in_cache = False
-    cache_size = 0
-    raw = cache.load_cache()
-    if raw:
-        in_cache = any(t["id"] == task_id for t in raw.get("tasks", []))
-        cache_size = len(raw.get("tasks", []))
-    return {
-        "in_cache": in_cache,
-        "cache_size": cache_size,
-        "expected_user_id": USER_ID,
-        "task_id": task.get("id"),
-        "name": task.get("name"),
-        "status": task.get("status", {}).get("status"),
-        "assignees": [{"id": a.get("id"), "username": a.get("username")} for a in task.get("assignees", [])],
-        "watchers": [{"id": w.get("id"), "username": w.get("username")} for w in task.get("watchers", [])],
-        "creator": {"id": task.get("creator", {}).get("id"), "username": task.get("creator", {}).get("username")},
-        "date_closed": task.get("date_closed"),
-        "archived": task.get("archived"),
-        "parent": task.get("parent"),
-        "team_id": task.get("team_id"),
-        "raw_error": task.get("err"),
-    }
-
-
-@app.get("/api/debug-webhooks")
-async def debug_webhooks():
-    """Diagnostic: list all webhooks registered in ClickUp for this team."""
-    return clickup_client.list_webhooks(TEAM_ID)
-
-
-@app.get("/api/debug-notes")
-async def debug_notes():
-    """Diagnostic: dump all task_notes rows to verify webhook activity."""
-    import sqlite3
-    with sqlite3.connect(db.DB_PATH) as conn:
-        rows = conn.execute(
-            "SELECT task_id, auto_iterations, manual_iterations, handoff_done, updated_at "
-            "FROM task_notes ORDER BY updated_at DESC"
-        ).fetchall()
-    return [
-        {
-            "task_id": r[0],
-            "auto_iterations": r[1],
-            "manual_iterations": r[2],
-            "handoff_done": bool(r[3]),
-            "updated_at": r[4],
-        }
-        for r in rows
-    ]
-
-
 @app.get("/api/notes/{task_id}")
 async def get_note(task_id: str):
     return db.get_note(task_id)
