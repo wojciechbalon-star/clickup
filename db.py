@@ -18,6 +18,49 @@ def init_db() -> None:
                 updated_at        REAL    DEFAULT 0
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS webhook_events (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at  REAL,
+                event_type   TEXT,
+                task_id      TEXT,
+                before_id    INTEGER,
+                after_id     INTEGER,
+                sig_ok       INTEGER,
+                raw_payload  TEXT
+            )
+        """)
+
+
+def log_webhook_event(received_at: float, event_type: Optional[str],
+                     task_id: Optional[str], before_id: Optional[int],
+                     after_id: Optional[int], sig_ok: bool, raw_payload: str) -> None:
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO webhook_events
+            (received_at, event_type, task_id, before_id, after_id, sig_ok, raw_payload)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (received_at, event_type, task_id, before_id, after_id, int(sig_ok), raw_payload))
+
+
+def get_recent_webhook_events(limit: int = 50) -> list[dict]:
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute("""
+            SELECT received_at, event_type, task_id, before_id, after_id, sig_ok, raw_payload
+            FROM webhook_events ORDER BY id DESC LIMIT ?
+        """, (limit,)).fetchall()
+    return [
+        {
+            "received_at": r[0],
+            "event_type": r[1],
+            "task_id": r[2],
+            "before_id": r[3],
+            "after_id": r[4],
+            "sig_ok": bool(r[5]),
+            "raw_payload": r[6],
+        }
+        for r in rows
+    ]
 
 
 def get_note(task_id: str) -> dict:

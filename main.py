@@ -155,19 +155,28 @@ async def clear_manual_iterations(task_id: str):
 
 @app.post("/webhooks/clickup")
 async def clickup_webhook(request: Request):
+    import time
     body = await request.body()
+    received_at = time.time()
 
+    sig_ok = True
     secret = os.environ.get("CLICKUP_WEBHOOK_SECRET", "")
     if secret:
         signature = request.headers.get("X-Signature", "")
         expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
+        sig_ok = hmac.compare_digest(signature, expected)
 
     try:
-        payload = json.loads(body)
+        payload = json.loads(body) if body else {}
     except Exception:
-        return JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
+        payload = {}
+
+    event_type = payload.get("event")
+    raw_str = body.decode("utf-8", errors="replace")[:4000]
+
+    if not sig_ok:
+        db.log_webhook_event(received_at, event_type, None, None, None, False, raw_str)
+        return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
 
     for item in payload.get("history_items", []):
         task_id = item.get("parent_id") or payload.get("task_id")
@@ -175,6 +184,14 @@ async def clickup_webhook(request: Request):
         after = item.get("after") or {}
         before_id = before.get("id")
         after_id = after.get("id")
+
+        db.log_webhook_event(
+            received_at, event_type,
+            str(task_id) if task_id else None,
+            int(before_id) if before_id is not None else None,
+            int(after_id) if after_id is not None else None,
+            True, raw_str,
+        )
 
         if task_id:
             db.process_assignee_event(
@@ -185,6 +202,16 @@ async def clickup_webhook(request: Request):
             )
 
     return {"ok": True}
+
+
+@app.get("/api/debug-webhooks")
+async def debug_webhooks():
+    return clickup_client.list_webhooks(TEAM_ID)
+
+
+@app.get("/api/debug-events")
+async def debug_events(limit: int = 50):
+    return db.get_recent_webhook_events(limit)
 
 
 @app.get("/api/track-task/{task_id}")
