@@ -57,26 +57,34 @@ def register_webhook(team_id: str, endpoint_url: str) -> dict:
     return resp.json()
 
 
-def get_handoff_ms(task_id: str) -> Optional[str]:
+def get_handoff_ms(task: dict) -> Optional[str]:
     """
-    Returns Unix ms timestamp (as str) when task first entered HANDOFF_STATUS.
-    Uses time_in_status endpoint — 'since' field = when that status was entered.
+    Returns Unix ms timestamp (as str) of the first handoff event.
+    Priority: first 'internal review' entry from status history, then date_closed.
     """
+    task_id = task["id"]
     resp = requests.get(
         f"{BASE_URL}/task/{task_id}/time_in_status",
         headers=_headers(),
         timeout=15,
     )
-    if not resp.ok:
-        return None
-    data = resp.json()
+    if resp.ok:
+        data = resp.json()
+        current = data.get("current_status", {})
+        if current.get("status", "").lower() == HANDOFF_STATUS:
+            ts = current.get("total_time", {}).get("since")
+            if ts:
+                return str(ts)
 
-    current = data.get("current_status", {})
-    if current.get("status", "").lower() == HANDOFF_STATUS:
-        return current.get("total_time", {}).get("since")
+        for entry in data.get("status_history", []):
+            if entry.get("status", "").lower() == HANDOFF_STATUS:
+                ts = entry.get("total_time", {}).get("since")
+                if ts:
+                    return str(ts)
 
-    for entry in data.get("status_history", []):
-        if entry.get("status", "").lower() == HANDOFF_STATUS:
-            return entry.get("total_time", {}).get("since")
+    # Fallback: task was completed without going through internal review
+    date_closed = task.get("date_closed")
+    if date_closed:
+        return str(date_closed)
 
     return None

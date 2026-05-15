@@ -44,6 +44,20 @@ def effective_iterations(note: dict) -> int:
     return note["auto_iterations"]
 
 
+def ensure_handoff_done(task_id: str) -> None:
+    """Mark handoff_done=True from API data without touching iteration count."""
+    note = get_note(task_id)
+    if note["handoff_done"]:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO task_notes (task_id, handoff_done, updated_at)
+            VALUES (?, 1, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+                handoff_done = 1, updated_at = excluded.updated_at
+        """, (task_id, time.time()))
+
+
 def save_manual(task_id: str, iterations: Optional[int], comment: Optional[str]) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -73,7 +87,7 @@ def process_assignee_event(task_id: str, before_id: Optional[int],
     now = time.time()
 
     with sqlite3.connect(DB_PATH) as conn:
-        if before_id == user_id and after_id is not None and after_id != user_id and not note["handoff_done"]:
+        if before_id == user_id and after_id != user_id and not note["handoff_done"]:
             # pierwszy handoff
             conn.execute("""
                 INSERT INTO task_notes (task_id, handoff_done, updated_at)
