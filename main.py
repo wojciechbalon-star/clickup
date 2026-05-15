@@ -209,6 +209,16 @@ async def debug_webhooks():
     return clickup_client.list_webhooks(TEAM_ID)
 
 
+@app.get("/api/debug-task/{task_id}")
+async def debug_task_quick(task_id: str):
+    task = clickup_client.get_task(task_id)
+    return {
+        "status": task.get("status", {}).get("status"),
+        "assignees": [{"id": a.get("id"), "username": a.get("username")} for a in task.get("assignees", [])],
+        "date_closed": task.get("date_closed"),
+    }
+
+
 @app.get("/api/debug-events")
 async def debug_events(limit: int = 50):
     return db.get_recent_webhook_events(limit)
