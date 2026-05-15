@@ -106,6 +106,27 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
+@app.get("/api/debug-notes")
+async def debug_notes():
+    """Diagnostic: dump all task_notes rows to verify webhook activity."""
+    import sqlite3
+    with sqlite3.connect(db.DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT task_id, auto_iterations, manual_iterations, handoff_done, updated_at "
+            "FROM task_notes ORDER BY updated_at DESC"
+        ).fetchall()
+    return [
+        {
+            "task_id": r[0],
+            "auto_iterations": r[1],
+            "manual_iterations": r[2],
+            "handoff_done": bool(r[3]),
+            "updated_at": r[4],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/notes/{task_id}")
 async def get_note(task_id: str):
     return db.get_note(task_id)
