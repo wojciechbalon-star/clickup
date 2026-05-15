@@ -57,6 +57,15 @@ def register_webhook(team_id: str, endpoint_url: str) -> dict:
     return resp.json()
 
 
+def list_webhooks(team_id: str) -> dict:
+    resp = requests.get(
+        f"{BASE_URL}/team/{team_id}/webhook",
+        headers=_headers(),
+        timeout=15,
+    )
+    return resp.json()
+
+
 def get_handoff_ms(task: dict) -> Optional[str]:
     """
     Returns Unix ms timestamp (as str) of the first handoff event.

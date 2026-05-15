@@ -106,6 +106,12 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
+@app.get("/api/debug-webhooks")
+async def debug_webhooks():
+    """Diagnostic: list all webhooks registered in ClickUp for this team."""
+    return clickup_client.list_webhooks(TEAM_ID)
+
+
 @app.get("/api/debug-notes")
 async def debug_notes():
     """Diagnostic: dump all task_notes rows to verify webhook activity."""
