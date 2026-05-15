@@ -106,6 +106,29 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
+@app.get("/api/debug-task/{task_id}")
+async def debug_task(task_id: str):
+    """Diagnostic: fetch raw task data from ClickUp and check why it may not appear in dashboard."""
+    task = clickup_client.get_task(task_id)
+    in_cache = False
+    raw = cache.load_cache()
+    if raw:
+        in_cache = any(t["id"] == task_id for t in raw.get("tasks", []))
+    return {
+        "in_cache": in_cache,
+        "expected_user_id": USER_ID,
+        "task_id": task.get("id"),
+        "name": task.get("name"),
+        "status": task.get("status", {}).get("status"),
+        "assignees": [{"id": a.get("id"), "username": a.get("username")} for a in task.get("assignees", [])],
+        "date_closed": task.get("date_closed"),
+        "archived": task.get("archived"),
+        "parent": task.get("parent"),
+        "team_id": task.get("team_id"),
+        "raw_error": task.get("err"),
+    }
+
+
 @app.get("/api/debug-webhooks")
 async def debug_webhooks():
     """Diagnostic: list all webhooks registered in ClickUp for this team."""
