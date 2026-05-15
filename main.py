@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -40,15 +41,19 @@ def _fetch_raw() -> dict:
     tasks = clickup_client.get_all_tasks(TEAM_ID, USER_ID)
     api_task_ids = {t["id"] for t in tasks}
 
-    # Include DB-tracked tasks not currently assigned to user (e.g. handed off to reviewer)
-    tracked_ids = db.get_tracked_task_ids()
-    for tid in tracked_ids - api_task_ids:
-        extra = clickup_client.get_task(tid)
-        if extra.get("err"):
-            continue
-        tasks.append(extra)
+    # Include DB-tracked tasks not in the API result (e.g. handed off to reviewer) — parallel fetch
+    missing_ids = list(db.get_tracked_task_ids() - api_task_ids)
+    if missing_ids:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            for extra in pool.map(clickup_client.get_task, missing_ids):
+                if not extra.get("err"):
+                    tasks.append(extra)
 
-    handoffs = {t["id"]: clickup_client.get_handoff_ms(t) for t in tasks}
+    # Parallel handoff fetch — sequential would exceed Render's 100s edge timeout
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        handoff_results = list(pool.map(clickup_client.get_handoff_ms, tasks))
+    handoffs = {t["id"]: h for t, h in zip(tasks, handoff_results)}
+
     payload = {"tasks": tasks, "handoffs": handoffs}
     cache.save_cache(payload)
     return payload
