@@ -58,6 +58,21 @@ def ensure_handoff_done(task_id: str) -> None:
         """, (task_id, time.time()))
 
 
+def track_task(task_id: str) -> None:
+    """Ensure a row exists for this task so the dashboard fetches it even if no longer assigned to user."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO task_notes (task_id, updated_at) VALUES (?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET updated_at = excluded.updated_at
+        """, (task_id, time.time()))
+
+
+def get_tracked_task_ids() -> set[str]:
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute("SELECT task_id FROM task_notes").fetchall()
+    return {r[0] for r in rows}
+
+
 def save_manual(task_id: str, iterations: Optional[int], comment: Optional[str]) -> None:
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -83,10 +98,20 @@ def process_assignee_event(task_id: str, before_id: Optional[int],
     inny → Ty (po handoffie)  → +1 iteracja.
     Kolejne Ty → inny          → ignorowane (handoff już był).
     """
+    user_involved = (before_id == user_id) or (after_id == user_id)
+    if not user_involved:
+        return
+
     note = get_note(task_id)
     now = time.time()
 
     with sqlite3.connect(DB_PATH) as conn:
+        # Always create a tracking row so dashboard can fetch this task later
+        conn.execute("""
+            INSERT INTO task_notes (task_id, updated_at) VALUES (?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET updated_at = excluded.updated_at
+        """, (task_id, now))
+
         if before_id == user_id and after_id != user_id and not note["handoff_done"]:
             # pierwszy handoff
             conn.execute("""

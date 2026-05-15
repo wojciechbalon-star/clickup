@@ -38,6 +38,16 @@ def _fetch_raw() -> dict:
         return cached
 
     tasks = clickup_client.get_all_tasks(TEAM_ID, USER_ID)
+    api_task_ids = {t["id"] for t in tasks}
+
+    # Include DB-tracked tasks not currently assigned to user (e.g. handed off to reviewer)
+    tracked_ids = db.get_tracked_task_ids()
+    for tid in tracked_ids - api_task_ids:
+        extra = clickup_client.get_task(tid)
+        if extra.get("err"):
+            continue
+        tasks.append(extra)
+
     handoffs = {t["id"]: clickup_client.get_handoff_ms(t) for t in tasks}
     payload = {"tasks": tasks, "handoffs": handoffs}
     cache.save_cache(payload)
@@ -220,6 +230,14 @@ async def clickup_webhook(request: Request):
             )
 
     return {"ok": True}
+
+
+@app.get("/api/track-task/{task_id}")
+async def track_task(task_id: str):
+    """Manually add a task to DB so it appears in dashboard even if not currently assigned to user."""
+    db.track_task(task_id)
+    cache.clear_cache()
+    return {"ok": True, "task_id": task_id}
 
 
 @app.get("/api/setup-webhook")
