@@ -121,16 +121,21 @@ async def debug_task(task_id: str):
     """Diagnostic: fetch raw task data from ClickUp and check why it may not appear in dashboard."""
     task = clickup_client.get_task(task_id)
     in_cache = False
+    cache_size = 0
     raw = cache.load_cache()
     if raw:
         in_cache = any(t["id"] == task_id for t in raw.get("tasks", []))
+        cache_size = len(raw.get("tasks", []))
     return {
         "in_cache": in_cache,
+        "cache_size": cache_size,
         "expected_user_id": USER_ID,
         "task_id": task.get("id"),
         "name": task.get("name"),
         "status": task.get("status", {}).get("status"),
         "assignees": [{"id": a.get("id"), "username": a.get("username")} for a in task.get("assignees", [])],
+        "watchers": [{"id": w.get("id"), "username": w.get("username")} for w in task.get("watchers", [])],
+        "creator": {"id": task.get("creator", {}).get("id"), "username": task.get("creator", {}).get("username")},
         "date_closed": task.get("date_closed"),
         "archived": task.get("archived"),
         "parent": task.get("parent"),
