@@ -205,3 +205,17 @@ async def setup_webhook(app_url: str = Query(..., description="Pełny URL aplika
     endpoint = f"{app_url.rstrip('/')}/webhooks/clickup"
     result = clickup_client.register_webhook(TEAM_ID, endpoint)
     return result
+
+
+@app.get("/api/reregister-webhook")
+async def reregister_webhook(app_url: str = Query(..., description="Pełny URL aplikacji, np. https://clickup-94jg.onrender.com")):
+    """Skasuj wszystkie istniejące webhooki i zarejestruj nowy. Zwraca secret do wpisania w env CLICKUP_WEBHOOK_SECRET."""
+    existing = clickup_client.list_webhooks(TEAM_ID).get("webhooks", [])
+    deleted = []
+    for wh in existing:
+        result = clickup_client.delete_webhook(wh["id"])
+        deleted.append({"id": wh["id"], "result": result})
+
+    endpoint = f"{app_url.rstrip('/')}/webhooks/clickup"
+    new_webhook = clickup_client.register_webhook(TEAM_ID, endpoint)
+    return {"deleted": deleted, "new_webhook": new_webhook}

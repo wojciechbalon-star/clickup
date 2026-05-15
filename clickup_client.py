@@ -66,6 +66,15 @@ def list_webhooks(team_id: str) -> dict:
     return resp.json()
 
 
+def delete_webhook(webhook_id: str) -> dict:
+    resp = requests.delete(
+        f"{BASE_URL}/webhook/{webhook_id}",
+        headers=_headers(),
+        timeout=15,
+    )
+    return {"status_code": resp.status_code, "body": resp.text}
+
+
 def get_handoff_ms(task: dict) -> Optional[str]:
     """
     Returns Unix ms timestamp (as str) of the first handoff event.
