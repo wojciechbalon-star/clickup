@@ -106,6 +106,26 @@ async def refresh():
     return RedirectResponse(url="/")
 
 
+@app.get("/api/debug-handoffs")
+async def debug_handoffs():
+    """Diagnostic: show raw handoff detection for all tasks."""
+    raw = _fetch_raw()
+    results = []
+    for task in raw["tasks"]:
+        date_closed = task.get("date_closed")
+        status = task.get("status", {}).get("status", "")
+        handoff_ms = raw["handoffs"].get(task["id"])
+        results.append({
+            "id": task["id"],
+            "name": task["name"],
+            "status": status,
+            "date_closed": date_closed,
+            "handoff_ms": handoff_ms,
+            "has_deadline": bool(clickup_client.get_deadline_ms(task)),
+        })
+    return results
+
+
 @app.get("/api/notes/{task_id}")
 async def get_note(task_id: str):
     return db.get_note(task_id)
