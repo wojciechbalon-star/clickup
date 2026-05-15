@@ -11,12 +11,13 @@ def _headers() -> dict:
     return {"Authorization": os.environ["CLICKUP_TOKEN"]}
 
 
-def get_tasks(team_id: str, user_id: int, page: int = 0) -> list[dict]:
+def get_tasks(team_id: str, user_id: int, page: int = 0, by: str = "assignees") -> list[dict]:
+    """by: 'assignees' or 'watchers'"""
     resp = requests.get(
         f"{BASE_URL}/team/{team_id}/task",
         headers=_headers(),
         params={
-            "assignees[]": str(user_id),
+            f"{by}[]": str(user_id),
             "include_closed": "true",
             "subtasks": "true",
             "page": page,
@@ -28,14 +29,18 @@ def get_tasks(team_id: str, user_id: int, page: int = 0) -> list[dict]:
 
 
 def get_all_tasks(team_id: str, user_id: int) -> list[dict]:
-    tasks, page = [], 0
-    while True:
-        batch = get_tasks(team_id, user_id, page)
-        if not batch:
-            break
-        tasks.extend(batch)
-        page += 1
-    return tasks
+    """Fetch tasks where user is assignee OR watcher (covers handed-off tasks)."""
+    tasks_by_id: dict[str, dict] = {}
+    for role in ("assignees", "watchers"):
+        page = 0
+        while True:
+            batch = get_tasks(team_id, user_id, page, by=role)
+            if not batch:
+                break
+            for t in batch:
+                tasks_by_id[t["id"]] = t
+            page += 1
+    return list(tasks_by_id.values())
 
 
 def get_deadline_ms(task: dict) -> Optional[str]:
