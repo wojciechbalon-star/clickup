@@ -11,17 +11,21 @@ def _headers() -> dict:
     return {"Authorization": os.environ["CLICKUP_TOKEN"]}
 
 
-def get_tasks(team_id: str, user_id: int, page: int = 0, by: str = "assignees") -> list[dict]:
-    """by: 'assignees' or 'watchers'"""
+def get_tasks(team_id: str, user_id: int, page: int = 0, by: str = "assignees",
+              statuses: Optional[list[str]] = None) -> list[dict]:
+    """by: 'assignees' or 'watchers'. statuses: optional list to narrow the result."""
+    params: dict = {
+        f"{by}[]": str(user_id),
+        "include_closed": "true",
+        "subtasks": "true",
+        "page": page,
+    }
+    if statuses:
+        params["statuses[]"] = statuses
     resp = requests.get(
         f"{BASE_URL}/team/{team_id}/task",
         headers=_headers(),
-        params={
-            f"{by}[]": str(user_id),
-            "include_closed": "true",
-            "subtasks": "true",
-            "page": page,
-        },
+        params=params,
         timeout=30,
     )
     resp.raise_for_status()
@@ -29,17 +33,29 @@ def get_tasks(team_id: str, user_id: int, page: int = 0, by: str = "assignees") 
 
 
 def get_all_tasks(team_id: str, user_id: int) -> list[dict]:
-    """Fetch tasks where user is assignee OR watcher (covers handed-off tasks)."""
+    """Fetch tasks where user is assignee (all statuses) or watcher (only handoff statuses)."""
     tasks_by_id: dict[str, dict] = {}
-    for role in ("assignees", "watchers"):
-        page = 0
-        while True:
-            batch = get_tasks(team_id, user_id, page, by=role)
-            if not batch:
-                break
-            for t in batch:
-                tasks_by_id[t["id"]] = t
-            page += 1
+
+    # Full set of currently-assigned tasks
+    page = 0
+    while True:
+        batch = get_tasks(team_id, user_id, page, by="assignees")
+        if not batch:
+            break
+        for t in batch:
+            tasks_by_id[t["id"]] = t
+        page += 1
+
+    # Watcher tasks limited to handoff status (user watches many tasks; full paginate too slow)
+    page = 0
+    while True:
+        batch = get_tasks(team_id, user_id, page, by="watchers", statuses=[HANDOFF_STATUS])
+        if not batch:
+            break
+        for t in batch:
+            tasks_by_id[t["id"]] = t
+        page += 1
+
     return list(tasks_by_id.values())
 
 
