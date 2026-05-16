@@ -11,3 +11,7 @@ services:
         sync: false
       - key: CLICKUP_TEAM_ID
         sync: false
+      - key: CLICKUP_WEBHOOK_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false

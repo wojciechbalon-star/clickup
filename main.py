@@ -144,10 +144,7 @@ async def save_note(task_id: str, request: Request):
 @app.delete("/api/notes/{task_id}/iterations")
 async def clear_manual_iterations(task_id: str):
     """Przywróć wartość automatyczną (usuń manual override)."""
-    db.save_manual(task_id, iterations=None, comment=None)
-    import sqlite3
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.execute("UPDATE task_notes SET manual_iterations=NULL WHERE task_id=?", (task_id,))
+    db.clear_manual_iterations(task_id)
     return {"ok": True}
 
 
