@@ -80,6 +80,7 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
             task_name=task["name"],
             deadline_ms=clickup_client.get_deadline_ms(task),
             handoff_ms=raw["handoffs"].get(task["id"]),
+            date_created_ms=task.get("date_created"),
         )
         # Bootstrap handoff_done in DB from API data so webhook can count future iterations
         if tm.first_handoff:
@@ -88,6 +89,12 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
         if ref_date and not (filter_start <= ref_date <= filter_end):
             continue
         task_metrics.append(tm)
+
+    # Sort newest-created first; tasks without date_created go to the bottom
+    task_metrics.sort(
+        key=lambda t: t.date_created or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
     summary = m.calculate_summary(task_metrics)
     return task_metrics, summary

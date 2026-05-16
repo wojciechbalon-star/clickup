@@ -80,10 +80,11 @@
   <thead>
     <tr>
       <th onclick="sortTable(0)">Zadanie ↕</th>
-      <th onclick="sortTable(1)">Deadline ↕</th>
-      <th onclick="sortTable(2)">Handoff ↕</th>
-      <th onclick="sortTable(3)">Opóźnienie ↕</th>
-      <th onclick="sortTable(4)">Iteracje ↕</th>
+      <th onclick="sortTable(1)">Utworzony ↕</th>
+      <th onclick="sortTable(2)">Deadline ↕</th>
+      <th onclick="sortTable(3)">Handoff ↕</th>
+      <th onclick="sortTable(4)">Opóźnienie ↕</th>
+      <th onclick="sortTable(5)">Iteracje ↕</th>
       <th>Komentarz do iteracji</th>
       <th>Status</th>
     </tr>
@@ -96,6 +97,7 @@
     <tr class="{{ 'excluded' if t.excluded else '' }}" data-task-id="{{ t.task_id }}"
         data-auto-iter="{{ note.auto_iterations }}">
       <td>{{ t.task_name }}</td>
+      <td>{{ t.date_created.strftime('%Y-%m-%d') if t.date_created else '—' }}</td>
       <td>{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
       <td>{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
       <td>

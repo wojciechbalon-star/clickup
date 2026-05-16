@@ -9,6 +9,7 @@ class TaskMetrics:
     task_name: str
     deadline: Optional[datetime]
     first_handoff: Optional[datetime]
+    date_created: Optional[datetime]
     on_time: Optional[bool]
     delay_days: Optional[float]
     excluded: bool
@@ -41,21 +42,25 @@ def calculate_task_metrics(
     task_name: str,
     deadline_ms: Optional[str],
     handoff_ms: Optional[str],
+    date_created_ms: Optional[str] = None,
 ) -> TaskMetrics:
     deadline = _parse_ms(deadline_ms)
     first_handoff = _parse_ms(handoff_ms)
+    date_created = _parse_ms(date_created_ms)
 
     if not deadline:
         return TaskMetrics(
             task_id=task_id, task_name=task_name, deadline=None,
-            first_handoff=first_handoff, on_time=None, delay_days=None,
+            first_handoff=first_handoff, date_created=date_created,
+            on_time=None, delay_days=None,
             excluded=True, exclusion_reason="brak deadline",
         )
 
     if not first_handoff:
         return TaskMetrics(
             task_id=task_id, task_name=task_name, deadline=deadline,
-            first_handoff=None, on_time=None, delay_days=None,
+            first_handoff=None, date_created=date_created,
+            on_time=None, delay_days=None,
             excluded=True, exclusion_reason="brak handoffa",
         )
 
@@ -64,7 +69,8 @@ def calculate_task_metrics(
 
     return TaskMetrics(
         task_id=task_id, task_name=task_name, deadline=deadline,
-        first_handoff=first_handoff, on_time=on_time, delay_days=delay_days,
+        first_handoff=first_handoff, date_created=date_created,
+        on_time=on_time, delay_days=delay_days,
         excluded=False, exclusion_reason=None,
     )
 
