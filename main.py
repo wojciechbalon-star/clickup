@@ -179,7 +179,7 @@ async def clickup_webhook(request: Request):
         return JSONResponse({"ok": False, "error": "invalid signature"}, status_code=401)
 
     for item in payload.get("history_items", []):
-        task_id = item.get("parent_id") or payload.get("task_id")
+        task_id = payload.get("task_id") or item.get("parent_id")
         before = item.get("before") or {}
         after = item.get("after") or {}
         before_id = before.get("id")
