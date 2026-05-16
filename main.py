@@ -103,7 +103,7 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
-async def dashboard(
+def dashboard(
     request: Request,
     days: int = Query(default=30),
     start: Optional[str] = Query(default=None),
