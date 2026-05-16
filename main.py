@@ -122,6 +122,11 @@ async def dashboard(
     })
 
 
+@app.api_route("/healthz", methods=["GET", "HEAD"])
+async def healthz():
+    return {"ok": True}
+
+
 @app.get("/api/refresh")
 async def refresh():
     cache.clear_cache()
