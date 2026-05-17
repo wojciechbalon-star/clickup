@@ -7,17 +7,27 @@ from psycopg2 import pool
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
-_pool = pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
+_pool: Optional[pool.ThreadedConnectionPool] = None
+
+
+def _get_pool() -> pool.ThreadedConnectionPool:
+    """Lazy pool init — keeps module import side-effect-free so tests can load
+    the pure-logic functions without hitting Postgres."""
+    global _pool
+    if _pool is None:
+        _pool = pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
+    return _pool
 
 
 @contextmanager
 def _conn():
-    conn = _pool.getconn()
+    p = _get_pool()
+    conn = p.getconn()
     try:
         with conn:
             yield conn
     finally:
-        _pool.putconn(conn)
+        p.putconn(conn)
 
 
 def init_db() -> None:
@@ -172,38 +182,46 @@ def clear_manual_iterations(task_id: str) -> None:
         cur.execute("UPDATE task_notes SET manual_iterations=NULL WHERE task_id=%s", (task_id,))
 
 
-def process_assignee_event(task_id: str, before_id: Optional[int],
-                           after_id: Optional[int], user_id: int) -> None:
-    """
-    Ty → inny (pierwszy raz) → handoff_done = True, nie liczy iteracji.
-    inny → Ty (po handoffie)  → +1 iteracja.
-    Kolejne Ty → inny          → ignorowane (handoff już był).
+def decide_event_action(before_id: Optional[int], after_id: Optional[int],
+                        user_id: int, handoff_done: bool) -> str:
+    """Decide what an assignee swap means relative to the dashboard user.
+
+    Ty → inny (pierwszy raz) → 'first_handoff' (set handoff_done, no count)
+    inny → Ty (po handoffie)  → 'iteration'    (+1 auto_iterations)
+    cokolwiek innego          → 'noop'         (log only)
     """
     user_involved = (before_id == user_id) or (after_id == user_id)
     if not user_involved:
+        return "noop"
+    if before_id == user_id and after_id != user_id and not handoff_done:
+        return "first_handoff"
+    if after_id == user_id and before_id != user_id and handoff_done:
+        return "iteration"
+    return "noop"
+
+
+def process_assignee_event(task_id: str, before_id: Optional[int],
+                           after_id: Optional[int], user_id: int) -> None:
+    note = get_note(task_id)
+    action = decide_event_action(before_id, after_id, user_id, note["handoff_done"])
+    if action == "noop":
         return
 
-    note = get_note(task_id)
     now = time.time()
-
     with _conn() as conn, conn.cursor() as cur:
-        # Always create a tracking row so dashboard can fetch this task later
         cur.execute("""
             INSERT INTO task_notes (task_id, updated_at) VALUES (%s, %s)
             ON CONFLICT (task_id) DO UPDATE SET updated_at = EXCLUDED.updated_at
         """, (task_id, now))
 
-        if before_id == user_id and after_id != user_id and not note["handoff_done"]:
-            # pierwszy handoff
+        if action == "first_handoff":
             cur.execute("""
                 INSERT INTO task_notes (task_id, handoff_done, updated_at)
                 VALUES (%s, TRUE, %s)
                 ON CONFLICT (task_id) DO UPDATE SET
                     handoff_done = TRUE, updated_at = EXCLUDED.updated_at
             """, (task_id, now))
-
-        elif after_id == user_id and before_id != user_id and note["handoff_done"]:
-            # task wrócił do Ciebie po handoffie → iteracja
+        elif action == "iteration":
             cur.execute("""
                 INSERT INTO task_notes (task_id, auto_iterations, handoff_done, updated_at)
                 VALUES (%s, 1, TRUE, %s)

@@ -55,6 +55,12 @@ def require_auth(creds: Optional[HTTPBasicCredentials] = Depends(_basic)) -> Non
 db.init_db()
 
 
+def verify_signature(body: bytes, signature: str, secret: str) -> bool:
+    """HMAC-SHA256 check of ClickUp webhook payload. Constant-time compare."""
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
 CACHE_KEY = "fetch_raw"
 CACHE_TTL = 15 * 60
 
@@ -232,12 +238,10 @@ async def clickup_webhook(request: Request):
     body = await request.body()
     received_at = time.time()
 
-    sig_ok = True
     secret = os.environ.get("CLICKUP_WEBHOOK_SECRET", "")
-    if secret:
-        signature = request.headers.get("X-Signature", "")
-        expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        sig_ok = hmac.compare_digest(signature, expected)
+    sig_ok = True if not secret else verify_signature(
+        body, request.headers.get("X-Signature", ""), secret,
+    )
 
     try:
         payload = json.loads(body) if body else {}
