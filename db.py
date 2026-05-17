@@ -113,16 +113,15 @@ def effective_iterations(note: dict) -> int:
 
 
 def ensure_handoff_done(task_id: str) -> None:
-    """Mark handoff_done=True from API data without touching iteration count."""
-    note = get_note(task_id)
-    if note["handoff_done"]:
-        return
+    """Mark handoff_done=True. Skips the write if already set so we don't UPDATE
+    every row on every dashboard render."""
     with _conn() as conn, conn.cursor() as cur:
         cur.execute("""
             INSERT INTO task_notes (task_id, handoff_done, updated_at)
             VALUES (%s, TRUE, %s)
             ON CONFLICT (task_id) DO UPDATE SET
                 handoff_done = TRUE, updated_at = EXCLUDED.updated_at
+            WHERE task_notes.handoff_done = FALSE
         """, (task_id, time.time()))
 
 
