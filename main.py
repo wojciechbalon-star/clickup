@@ -87,10 +87,6 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
         if not updated or not (filter_start <= updated <= filter_end):
             continue
 
-        is_current_assignee = any(
-            int(a.get("id", 0)) == USER_ID for a in task.get("assignees", [])
-        )
-
         tm = m.calculate_task_metrics(
             task_id=task["id"],
             task_name=task["name"],
@@ -98,13 +94,6 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
             handoff_ms=raw["handoffs"].get(task["id"]),
             date_created_ms=task.get("date_created"),
         )
-
-        # Watcher-only tasks count as "yours" only if the handoff happened inside
-        # the filter window — proxy for "you were assignee and handed it off recently".
-        if not is_current_assignee:
-            if not tm.first_handoff or not (filter_start <= tm.first_handoff <= filter_end):
-                continue
-
         if tm.first_handoff:
             db.ensure_handoff_done(tm.task_id)
         ref_date = tm.first_handoff or tm.deadline
