@@ -73,8 +73,22 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
         filter_start = now - timedelta(days=days)
         filter_end = now
 
+    def _ms_to_dt(value):
+        if not value:
+            return None
+        try:
+            return datetime.fromtimestamp(int(value) / 1000, tz=timezone.utc)
+        except (ValueError, OSError, TypeError):
+            return None
+
     task_metrics = []
     for task in raw["tasks"]:
+        # Skip tasks with no activity inside the filter window — task is "yours"
+        # only if it was touched recently enough.
+        updated = _ms_to_dt(task.get("date_updated"))
+        if not updated or not (filter_start <= updated <= filter_end):
+            continue
+
         tm = m.calculate_task_metrics(
             task_id=task["id"],
             task_name=task["name"],
