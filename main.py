@@ -153,8 +153,13 @@ async def dashboard(
     days: int = Query(default=30),
     start: Optional[str] = Query(default=None),
     end: Optional[str] = Query(default=None),
+    show_hidden: int = Query(default=0),
 ):
     task_metrics, summary = _build_metrics(days, start, end)
+    hidden_ids = db.get_hidden_task_ids()
+    if not show_hidden:
+        task_metrics = [t for t in task_metrics if t.task_id not in hidden_ids]
+        summary = m.calculate_summary(task_metrics)
     notes = {t.task_id: db.get_note(t.task_id) for t in task_metrics}
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -164,6 +169,8 @@ async def dashboard(
         "days": days,
         "start": start or "",
         "end": end or "",
+        "show_hidden": bool(show_hidden),
+        "hidden_count": len(hidden_ids),
     })
 
 
@@ -202,6 +209,18 @@ async def save_note(task_id: str, request: Request):
 async def clear_manual_iterations(task_id: str):
     """Przywróć wartość automatyczną (usuń manual override)."""
     db.clear_manual_iterations(task_id)
+    return {"ok": True}
+
+
+@app.post("/api/notes/{task_id}/hide", dependencies=[Depends(require_auth)])
+async def hide_task(task_id: str):
+    db.set_hidden(task_id, True)
+    return {"ok": True}
+
+
+@app.delete("/api/notes/{task_id}/hide", dependencies=[Depends(require_auth)])
+async def unhide_task(task_id: str):
+    db.set_hidden(task_id, False)
     return {"ok": True}
 
 

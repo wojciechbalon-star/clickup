@@ -34,6 +34,11 @@
     .badge-late { background: #fee2e2; color: #991b1b; }
     .badge-warn { background: #fef3c7; color: #92400e; }
     .excluded { color: #aaa; font-style: italic; }
+    .btn-hide { background: none; border: none; cursor: pointer; color: #bbb; font-size: 1rem; padding: 2px 6px; border-radius: 4px; }
+    .btn-hide:hover { background: #fee2e2; color: #991b1b; }
+    tr.row-hidden { opacity: 0.4; }
+    th.sort-asc::after  { content: " ▲"; color: #7c3aed; }
+    th.sort-desc::after { content: " ▼"; color: #7c3aed; }
   </style>
 </head>
 <body>
@@ -49,6 +54,10 @@
       <button type="submit" class="btn-apply">Zastosuj</button>
     </form>
   </div>
+  {% set hidden_url = '/?days=' ~ days ~ ('&start=' ~ start ~ '&end=' ~ end if start else '') ~ ('&show_hidden=1' if not show_hidden else '') %}
+  <a href="{{ hidden_url }}" class="refresh" style="background:{{ '#7c3aed' if show_hidden else '#eee' }};color:{{ '#fff' if show_hidden else '#333' }};">
+    {{ 'Ukryj ukryte' if show_hidden else 'Pokaż ukryte (' ~ hidden_count ~ ')' }}
+  </a>
   <a href="/api/refresh" class="refresh">Odśwież dane</a>
 </header>
 
@@ -79,14 +88,15 @@
 <table id="taskTable">
   <thead>
     <tr>
-      <th onclick="sortTable(0)">Zadanie ↕</th>
-      <th onclick="sortTable(1)">Utworzony ↕</th>
-      <th onclick="sortTable(2)">Deadline ↕</th>
-      <th onclick="sortTable(3)">Handoff ↕</th>
-      <th onclick="sortTable(4)">Opóźnienie ↕</th>
-      <th onclick="sortTable(5)">Iteracje ↕</th>
+      <th data-col="0" data-type="text">Zadanie</th>
+      <th data-col="1" data-type="date">Utworzony</th>
+      <th data-col="2" data-type="date">Deadline</th>
+      <th data-col="3" data-type="date">Handoff</th>
+      <th data-col="4" data-type="num">Opóźnienie</th>
+      <th data-col="5" data-type="num">Iteracje</th>
       <th>Komentarz do iteracji</th>
-      <th>Status</th>
+      <th data-col="7" data-type="text">Status</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -94,18 +104,20 @@
     {% set note = notes[t.task_id] %}
     {% set iter_val = note.manual_iterations if note.manual_iterations is not none else note.auto_iterations %}
     {% set is_manual = note.manual_iterations is not none %}
-    <tr class="{{ 'excluded' if t.excluded else '' }}" data-task-id="{{ t.task_id }}"
-        data-auto-iter="{{ note.auto_iterations }}">
-      <td>{{ t.task_name }}</td>
-      <td>{{ t.date_created.strftime('%Y-%m-%d') if t.date_created else '—' }}</td>
-      <td>{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
-      <td>{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
-      <td>
+    <tr class="{{ 'excluded' if t.excluded else '' }}{{ ' row-hidden' if note.hidden else '' }}"
+        data-task-id="{{ t.task_id }}"
+        data-auto-iter="{{ note.auto_iterations }}"
+        data-hidden="{{ '1' if note.hidden else '0' }}">
+      <td data-sort="{{ t.task_name|lower }}">{{ t.task_name }}</td>
+      <td data-sort="{{ t.date_created.timestamp() if t.date_created else 0 }}">{{ t.date_created.strftime('%Y-%m-%d') if t.date_created else '—' }}</td>
+      <td data-sort="{{ t.deadline.timestamp() if t.deadline else 0 }}">{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
+      <td data-sort="{{ t.first_handoff.timestamp() if t.first_handoff else 0 }}">{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
+      <td data-sort="{{ t.delay_days if t.delay_days is not none else -99999 }}">
         {% if t.delay_days is not none %}
           {{ '%+.1f'|format(t.delay_days) }}d
         {% else %}—{% endif %}
       </td>
-      <td style="white-space:nowrap;">
+      <td data-sort="{{ iter_val }}" style="white-space:nowrap;">
         <input type="number" min="0" class="note-iter"
                value="{{ iter_val }}"
                style="width:52px;padding:3px 6px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;text-align:center;{{ 'background:#fffbe6;' if is_manual else '' }}"
@@ -116,7 +128,7 @@
                  value="{{ note.comment }}"
                  placeholder="Komentarz…"
                  style="width:100%;padding:3px 8px;border:1px solid #e0e0e0;border-radius:4px;font-size:.875rem;"></td>
-      <td>
+      <td data-sort="{{ t.exclusion_reason if t.excluded else ('on_time' if t.on_time else 'late') }}">
         {% if t.excluded %}
           <span class="badge badge-warn">⚠ {{ t.exclusion_reason }}</span>
         {% elif t.on_time %}
@@ -124,6 +136,10 @@
         {% else %}
           <span class="badge badge-late">Po terminie</span>
         {% endif %}
+      </td>
+      <td>
+        <button type="button" class="btn-hide" title="{{ 'Odkryj' if note.hidden else 'Ukryj' }}"
+                onclick="toggleHidden('{{ t.task_id }}', this)">{{ '↺' if note.hidden else '×' }}</button>
       </td>
     </tr>
     {% endfor %}
@@ -199,20 +215,64 @@ document.querySelectorAll('.note-comment').forEach(input => {
   input.addEventListener('input', () => saveNote(input.closest('tr').dataset.taskId));
 });
 
-// Sortable table
-let sortDir = {};
-function sortTable(col) {
+// Sortable table — uses data-sort attribute on each cell, data-type on header.
+let sortState = { col: null, dir: 1 };
+function sortTable(col, type) {
   const table = document.getElementById('taskTable');
-  const rows = Array.from(table.querySelectorAll('tbody tr'));
-  sortDir[col] = !sortDir[col];
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const dir = (sortState.col === col) ? -sortState.dir : 1;
+  sortState = { col, dir };
+
   rows.sort((a, b) => {
-    const av = a.cells[col].textContent.trim();
-    const bv = b.cells[col].textContent.trim();
-    const n = parseFloat(av) - parseFloat(bv);
-    if (!isNaN(n)) return sortDir[col] ? n : -n;
-    return sortDir[col] ? av.localeCompare(bv) : bv.localeCompare(av);
+    let av = a.cells[col].dataset.sort ?? a.cells[col].textContent.trim();
+    let bv = b.cells[col].dataset.sort ?? b.cells[col].textContent.trim();
+    if (type === 'num' || type === 'date') {
+      av = parseFloat(av); bv = parseFloat(bv);
+      if (isNaN(av)) av = -Infinity;
+      if (isNaN(bv)) bv = -Infinity;
+      return (av - bv) * dir;
+    }
+    return av.toString().localeCompare(bv.toString()) * dir;
   });
-  rows.forEach(r => table.querySelector('tbody').appendChild(r));
+  rows.forEach(r => tbody.appendChild(r));
+
+  // Visual indicator
+  table.querySelectorAll('th').forEach(th => th.classList.remove('sort-asc', 'sort-desc'));
+  const th = table.querySelector(`th[data-col="${col}"]`);
+  if (th) th.classList.add(dir === 1 ? 'sort-asc' : 'sort-desc');
+}
+
+document.querySelectorAll('#taskTable th[data-col]').forEach(th => {
+  th.style.cursor = 'pointer';
+  th.addEventListener('click', () => sortTable(parseInt(th.dataset.col), th.dataset.type));
+});
+
+// Hide / unhide
+function toggleHidden(taskId, btn) {
+  const row = btn.closest('tr');
+  const isHidden = row.dataset.hidden === '1';
+  const method = isHidden ? 'DELETE' : 'POST';
+  fetch(`/api/notes/${taskId}/hide`, { method }).then(r => {
+    if (!r.ok) return;
+    if (isHidden) {
+      row.dataset.hidden = '0';
+      row.classList.remove('row-hidden');
+      btn.textContent = '×';
+      btn.title = 'Ukryj';
+    } else {
+      // If the show-hidden toggle is off, remove the row from DOM entirely.
+      const showingHidden = {{ 'true' if show_hidden else 'false' }};
+      if (showingHidden) {
+        row.dataset.hidden = '1';
+        row.classList.add('row-hidden');
+        btn.textContent = '↺';
+        btn.title = 'Odkryj';
+      } else {
+        row.remove();
+      }
+    }
+  });
 }
 </script>
 

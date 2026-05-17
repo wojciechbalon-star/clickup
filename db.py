@@ -19,9 +19,11 @@ def init_db() -> None:
                 manual_iterations INTEGER,
                 comment           TEXT    DEFAULT '',
                 handoff_done      BOOLEAN DEFAULT FALSE,
+                hidden            BOOLEAN DEFAULT FALSE,
                 updated_at        DOUBLE PRECISION DEFAULT 0
             )
         """)
+        cur.execute("ALTER TABLE task_notes ADD COLUMN IF NOT EXISTS hidden BOOLEAN DEFAULT FALSE")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS webhook_events (
                 id           BIGSERIAL PRIMARY KEY,
@@ -56,7 +58,7 @@ def init_db() -> None:
 def get_note(task_id: str) -> dict:
     with _conn() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT auto_iterations, manual_iterations, comment, handoff_done "
+            "SELECT auto_iterations, manual_iterations, comment, handoff_done, hidden "
             "FROM task_notes WHERE task_id=%s",
             (task_id,),
         )
@@ -67,8 +69,25 @@ def get_note(task_id: str) -> dict:
             "manual_iterations": row[1],
             "comment":           row[2] or "",
             "handoff_done":      bool(row[3]),
+            "hidden":            bool(row[4]),
         }
-    return {"auto_iterations": 0, "manual_iterations": None, "comment": "", "handoff_done": False}
+    return {"auto_iterations": 0, "manual_iterations": None, "comment": "", "handoff_done": False, "hidden": False}
+
+
+def get_hidden_task_ids() -> set[str]:
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT task_id FROM task_notes WHERE hidden = TRUE")
+        rows = cur.fetchall()
+    return {r[0] for r in rows}
+
+
+def set_hidden(task_id: str, hidden: bool) -> None:
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO task_notes (task_id, hidden, updated_at) VALUES (%s, %s, %s)
+            ON CONFLICT (task_id) DO UPDATE SET
+                hidden = EXCLUDED.hidden, updated_at = EXCLUDED.updated_at
+        """, (task_id, hidden, time.time()))
 
 
 def effective_iterations(note: dict) -> int:
