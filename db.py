@@ -85,8 +85,16 @@ def track_task(task_id: str) -> None:
 
 
 def get_tracked_task_ids() -> set[str]:
+    """Tasks worth refetching when missing from the assignee list: only those with
+    real activity (iterations counted, manual override, or a note). Bootstrap-only
+    rows from ensure_handoff_done aren't re-pulled — they were never the user's task."""
     with _conn() as conn, conn.cursor() as cur:
-        cur.execute("SELECT task_id FROM task_notes")
+        cur.execute("""
+            SELECT task_id FROM task_notes
+            WHERE auto_iterations > 0
+               OR manual_iterations IS NOT NULL
+               OR COALESCE(comment, '') <> ''
+        """)
         rows = cur.fetchall()
     return {r[0] for r in rows}
 
