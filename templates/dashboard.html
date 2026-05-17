@@ -33,10 +33,13 @@
     .badge-ok { background: #d1fae5; color: #065f46; }
     .badge-late { background: #fee2e2; color: #991b1b; }
     .badge-warn { background: #fef3c7; color: #92400e; }
-    .excluded { color: #555; font-style: italic; }
+    .excluded { color: #111; font-style: italic; }
     tr.row-ontime  td:first-child { box-shadow: inset 3px 0 0 #34d399; }
     tr.row-late    td:first-child { box-shadow: inset 3px 0 0 #f87171; }
     tr.row-excl    td:first-child { box-shadow: inset 3px 0 0 #fcd34d; }
+    .task-link { text-decoration: none; color: #111; }
+    .task-link:hover { text-decoration: underline; }
+    tr.row-ontime .task-link { color: #047857; font-weight: 600; }
     .delay-early { color: #047857; font-weight: 600; }
     .delay-late  { color: #b91c1c; font-weight: 600; }
     .btn-hide { background: none; border: none; cursor: pointer; color: #bbb; font-size: 1rem; padding: 2px 6px; border-radius: 4px; }
@@ -123,7 +126,7 @@
         data-hidden="{{ '1' if note.hidden else '0' }}">
       <td data-sort="{{ t.task_name|lower }}">
         <a href="https://app.clickup.com/t/{{ t.task_id }}" target="_blank" rel="noopener"
-           style="color:#7c3aed;text-decoration:none;">{{ t.task_name }}</a>
+           class="task-link">{{ t.task_name }}</a>
       </td>
       <td data-sort="{{ t.date_created.timestamp() if t.date_created else 0 }}">{{ t.date_created.strftime('%Y-%m-%d') if t.date_created else '—' }}</td>
       <td data-sort="{{ t.deadline.timestamp() if t.deadline else 0 }}">{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
