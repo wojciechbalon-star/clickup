@@ -62,6 +62,12 @@
   <a href="/api/refresh" class="refresh">Odśwież dane</a>
 </header>
 
+{% if not strict_filter_active %}
+<div style="background:#fef3c7;color:#92400e;padding:8px 24px;font-size:.8rem;border-bottom:1px solid #f0e4a8;">
+  Strict assignee filter: <strong>nieaktywny</strong> — webhook history {{ webhook_history_days }}d/30d. Automatycznie się włączy gdy uzbiera 30 dni.
+</div>
+{% endif %}
+
 <div class="grid">
   <!-- Terminowość -->
   <div class="card">

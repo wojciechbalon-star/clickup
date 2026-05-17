@@ -120,11 +120,26 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
         except (ValueError, OSError, TypeError):
             return None
 
+    # Sleeper: once we have >= 30 days of webhook history, restrict watcher
+    # tasks (user not currently assignee) to ones where webhook captured the
+    # user on either side of an assignee swap. Until then, fetch returns None
+    # and we fall back to the loose updated-in-window filter.
+    strict_assignee_history: Optional[set[str]] = None
+    if db.webhook_history_days() >= 30:
+        strict_assignee_history = db.get_user_assignee_task_ids(USER_ID, days)
+
     task_metrics = []
     for task in raw["tasks"]:
         updated = _ms_to_dt(task.get("date_updated"))
         if not updated or not (filter_start <= updated <= filter_end):
             continue
+
+        if strict_assignee_history is not None:
+            is_current_assignee = any(
+                int(a.get("id", 0)) == USER_ID for a in task.get("assignees", [])
+            )
+            if not is_current_assignee and task["id"] not in strict_assignee_history:
+                continue
 
         tm = m.calculate_task_metrics(
             task_id=task["id"],
@@ -167,6 +182,7 @@ async def dashboard(
         task_metrics = [t for t in task_metrics if t.task_id not in hidden_ids]
         summary = m.calculate_summary(task_metrics)
     notes = {t.task_id: db.get_note(t.task_id) for t in task_metrics}
+    hist_days = db.webhook_history_days()
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "summary": summary,
@@ -177,6 +193,8 @@ async def dashboard(
         "end": end or "",
         "show_hidden": bool(show_hidden),
         "hidden_count": len(hidden_ids),
+        "strict_filter_active": hist_days >= 30,
+        "webhook_history_days": round(hist_days, 1),
     })
 
 

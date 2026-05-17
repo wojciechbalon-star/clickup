@@ -311,6 +311,37 @@ def cache_clear(key: str) -> None:
         cur.execute("DELETE FROM app_cache WHERE key = %s", (key,))
 
 
+def webhook_history_days() -> float:
+    """Age in days of the oldest validated webhook event. 0 if none yet.
+    Used to decide whether we have enough assignee history to filter strictly."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT MIN(received_at) FROM webhook_events WHERE sig_ok = TRUE"
+        )
+        row = cur.fetchone()
+    if not row or row[0] is None:
+        return 0.0
+    return (time.time() - row[0]) / 86400
+
+
+def get_user_assignee_task_ids(user_id: int, days: int) -> set[str]:
+    """Tasks where user appeared on either side of an assignee swap within the
+    last N days, per our webhook log. The proxy for 'I was actually on this
+    task recently' that ClickUp's API can't give us."""
+    cutoff = time.time() - days * 86400
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT DISTINCT task_id FROM webhook_events
+            WHERE received_at >= %s
+              AND task_id IS NOT NULL
+              AND sig_ok = TRUE
+              AND event_type = 'taskAssigneeUpdated'
+              AND (before_id = %s OR after_id = %s)
+        """, (cutoff, user_id, user_id))
+        rows = cur.fetchall()
+    return {r[0] for r in rows}
+
+
 def get_recent_webhook_events(limit: int = 50) -> list[dict]:
     with _conn() as conn, conn.cursor() as cur:
         cur.execute("""
