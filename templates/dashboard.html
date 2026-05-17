@@ -33,7 +33,12 @@
     .badge-ok { background: #d1fae5; color: #065f46; }
     .badge-late { background: #fee2e2; color: #991b1b; }
     .badge-warn { background: #fef3c7; color: #92400e; }
-    .excluded { color: #aaa; font-style: italic; }
+    .excluded { color: #555; font-style: italic; }
+    tr.row-ontime  td:first-child { box-shadow: inset 3px 0 0 #34d399; }
+    tr.row-late    td:first-child { box-shadow: inset 3px 0 0 #f87171; }
+    tr.row-excl    td:first-child { box-shadow: inset 3px 0 0 #fcd34d; }
+    .delay-early { color: #047857; font-weight: 600; }
+    .delay-late  { color: #b91c1c; font-weight: 600; }
     .btn-hide { background: none; border: none; cursor: pointer; color: #bbb; font-size: 1rem; padding: 2px 6px; border-radius: 4px; }
     .btn-hide:hover { background: #fee2e2; color: #991b1b; }
     tr.row-hidden { opacity: 0.4; }
@@ -111,7 +116,8 @@
     {% set note = notes[t.task_id] %}
     {% set iter_val = note.manual_iterations if note.manual_iterations is not none else note.auto_iterations %}
     {% set is_manual = note.manual_iterations is not none %}
-    <tr class="{{ 'excluded' if t.excluded else '' }}{{ ' row-hidden' if note.hidden else '' }}"
+    {% set row_class = 'row-excl excluded' if t.excluded else ('row-ontime' if t.on_time else 'row-late') %}
+    <tr class="{{ row_class }}{{ ' row-hidden' if note.hidden else '' }}"
         data-task-id="{{ t.task_id }}"
         data-auto-iter="{{ note.auto_iterations }}"
         data-hidden="{{ '1' if note.hidden else '0' }}">
@@ -124,7 +130,7 @@
       <td data-sort="{{ t.first_handoff.timestamp() if t.first_handoff else 0 }}">{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>
       <td data-sort="{{ t.delay_days if t.delay_days is not none else -99999 }}">
         {% if t.delay_days is not none %}
-          {{ '%+.1f'|format(t.delay_days) }}d
+          <span class="{{ 'delay-early' if t.delay_days <= 0 else 'delay-late' }}">{{ '%+.1f'|format(t.delay_days) }}d</span>
         {% else %}—{% endif %}
       </td>
       <td data-sort="{{ iter_val }}" style="white-space:nowrap;">
