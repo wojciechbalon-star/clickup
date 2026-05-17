@@ -3,17 +3,18 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 
-import cache
 import clickup_client
 import db
 import metrics as m
@@ -30,11 +31,36 @@ if _missing:
 TEAM_ID = os.environ["CLICKUP_TEAM_ID"]
 USER_ID = int(os.environ["CLICKUP_USER_ID"])
 
+DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "")
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+_basic = HTTPBasic(auto_error=False)
+
+
+def require_auth(creds: Optional[HTTPBasicCredentials] = Depends(_basic)) -> None:
+    """Gate dashboard + /api/* with Basic auth. Webhook and /healthz are exempt."""
+    if not DASHBOARD_USER or not DASHBOARD_PASSWORD:
+        # Misconfigured server — fail closed.
+        raise HTTPException(status_code=503, detail="auth not configured")
+    if creds is None or not (
+        secrets.compare_digest(creds.username, DASHBOARD_USER)
+        and secrets.compare_digest(creds.password, DASHBOARD_PASSWORD)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
 db.init_db()
 
 
+CACHE_KEY = "fetch_raw"
+CACHE_TTL = 15 * 60
+
+
 def _fetch_raw() -> dict:
-    cached = cache.load_cache()
+    cached = db.cache_load(CACHE_KEY, CACHE_TTL)
     if cached:
         return cached
 
@@ -49,13 +75,20 @@ def _fetch_raw() -> dict:
                 if not extra.get("err"):
                     tasks.append(extra)
 
-    # Parallel handoff fetch — sequential would exceed Render's 100s edge timeout
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        handoff_results = list(pool.map(clickup_client.get_handoff_ms, tasks))
-    handoffs = {t["id"]: h for t, h in zip(tasks, handoff_results)}
+    # Fetch handoff_ms: serve known values from DB, only hit ClickUp for the rest.
+    all_ids = [t["id"] for t in tasks]
+    cached_handoffs = db.get_handoff_cache(all_ids)
+    to_fetch = [t for t in tasks if t["id"] not in cached_handoffs]
+    fresh: dict[str, Optional[str]] = {}
+    if to_fetch:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            results = list(pool.map(clickup_client.get_handoff_ms, to_fetch))
+        fresh = {t["id"]: h for t, h in zip(to_fetch, results)}
+        db.save_handoff_cache(fresh)
 
+    handoffs = {**cached_handoffs, **fresh}
     payload = {"tasks": tasks, "handoffs": handoffs}
-    cache.save_cache(payload)
+    db.cache_save(CACHE_KEY, payload)
     return payload
 
 
@@ -113,7 +146,8 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
-@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse,
+               dependencies=[Depends(require_auth)])
 async def dashboard(
     request: Request,
     days: int = Query(default=30),
@@ -138,20 +172,20 @@ async def healthz():
     return {"ok": True}
 
 
-@app.get("/api/refresh")
+@app.get("/api/refresh", dependencies=[Depends(require_auth)])
 async def refresh():
-    cache.clear_cache()
+    db.cache_clear(CACHE_KEY)
     return RedirectResponse(url="/")
 
 
-@app.get("/api/notes/{task_id}")
+@app.get("/api/notes/{task_id}", dependencies=[Depends(require_auth)])
 async def get_note(task_id: str):
     return db.get_note(task_id)
 
 
 # ── Notatki (iteracje + komentarz) ────────────────────────────────────────────
 
-@app.post("/api/notes/{task_id}")
+@app.post("/api/notes/{task_id}", dependencies=[Depends(require_auth)])
 async def save_note(task_id: str, request: Request):
     body = await request.json()
     iterations = body.get("iterations")
@@ -164,7 +198,7 @@ async def save_note(task_id: str, request: Request):
     return {"ok": True}
 
 
-@app.delete("/api/notes/{task_id}/iterations")
+@app.delete("/api/notes/{task_id}/iterations", dependencies=[Depends(require_auth)])
 async def clear_manual_iterations(task_id: str):
     """Przywróć wartość automatyczną (usuń manual override)."""
     db.clear_manual_iterations(task_id)
@@ -224,12 +258,12 @@ async def clickup_webhook(request: Request):
     return {"ok": True}
 
 
-@app.get("/api/debug-webhooks")
+@app.get("/api/debug-webhooks", dependencies=[Depends(require_auth)])
 async def debug_webhooks():
     return clickup_client.list_webhooks(TEAM_ID)
 
 
-@app.get("/api/debug-task/{task_id}")
+@app.get("/api/debug-task/{task_id}", dependencies=[Depends(require_auth)])
 async def debug_task_quick(task_id: str):
     task = clickup_client.get_task(task_id)
     return {
@@ -239,20 +273,20 @@ async def debug_task_quick(task_id: str):
     }
 
 
-@app.get("/api/debug-events")
+@app.get("/api/debug-events", dependencies=[Depends(require_auth)])
 async def debug_events(limit: int = 50):
     return db.get_recent_webhook_events(limit)
 
 
-@app.get("/api/track-task/{task_id}")
+@app.get("/api/track-task/{task_id}", dependencies=[Depends(require_auth)])
 async def track_task(task_id: str):
     """Manually add a task to DB so it appears in dashboard even if not currently assigned to user."""
     db.track_task(task_id)
-    cache.clear_cache()
+    db.cache_clear(CACHE_KEY)
     return {"ok": True, "task_id": task_id}
 
 
-@app.get("/api/setup-webhook")
+@app.get("/api/setup-webhook", dependencies=[Depends(require_auth)])
 async def setup_webhook(app_url: str = Query(..., description="Pełny URL aplikacji, np. https://xxx.onrender.com")):
     """Jednorazowa rejestracja webhooka w ClickUp. Wywołaj raz po deployu."""
     endpoint = f"{app_url.rstrip('/')}/webhooks/clickup"
@@ -260,7 +294,7 @@ async def setup_webhook(app_url: str = Query(..., description="Pełny URL aplika
     return result
 
 
-@app.get("/api/reregister-webhook")
+@app.get("/api/reregister-webhook", dependencies=[Depends(require_auth)])
 async def reregister_webhook(app_url: str = Query(..., description="Pełny URL aplikacji, np. https://clickup-94jg.onrender.com")):
     """Skasuj wszystkie istniejące webhooki i zarejestruj nowy. Zwraca secret do wpisania w env CLICKUP_WEBHOOK_SECRET."""
     existing = clickup_client.list_webhooks(TEAM_ID).get("webhooks", [])

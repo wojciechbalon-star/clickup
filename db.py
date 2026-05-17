@@ -34,6 +34,23 @@ def init_db() -> None:
                 raw_payload  TEXT
             )
         """)
+        # Cache of first-handoff timestamps (immutable once known) so we don't
+        # re-fetch ClickUp's time_in_status on every dashboard render.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_handoff_cache (
+                task_id      TEXT PRIMARY KEY,
+                handoff_ms   TEXT,
+                fetched_at   DOUBLE PRECISION
+            )
+        """)
+        # Single-row JSON blob cache shared across machines (replaces cache.json).
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS app_cache (
+                key        TEXT PRIMARY KEY,
+                payload    TEXT,
+                updated_at DOUBLE PRECISION
+            )
+        """)
 
 
 def get_note(task_id: str) -> dict:
@@ -172,6 +189,75 @@ def log_webhook_event(received_at: float, event_type: Optional[str],
             (received_at, event_type, task_id, before_id, after_id, sig_ok, raw_payload)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (received_at, event_type, task_id, before_id, after_id, sig_ok, raw_payload))
+
+
+def get_handoff_cache(task_ids: list[str]) -> dict[str, Optional[str]]:
+    """Return task_id -> handoff_ms for any cached rows. Only non-NULL values are
+    served from cache; tasks with NULL are refetched in case a handoff has since
+    occurred. Rows older than 7 days are also ignored (handles edge cases like
+    a handoff being undone by reopening the task)."""
+    if not task_ids:
+        return {}
+    cutoff = time.time() - 7 * 86400
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT task_id, handoff_ms FROM task_handoff_cache "
+            "WHERE task_id = ANY(%s) AND handoff_ms IS NOT NULL AND fetched_at >= %s",
+            (task_ids, cutoff),
+        )
+        rows = cur.fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def save_handoff_cache(values: dict[str, Optional[str]]) -> None:
+    """Bulk upsert. Pass {task_id: handoff_ms_or_None}."""
+    if not values:
+        return
+    now = time.time()
+    with _conn() as conn, conn.cursor() as cur:
+        for tid, hms in values.items():
+            cur.execute("""
+                INSERT INTO task_handoff_cache (task_id, handoff_ms, fetched_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (task_id) DO UPDATE SET
+                    handoff_ms = EXCLUDED.handoff_ms,
+                    fetched_at = EXCLUDED.fetched_at
+            """, (tid, hms, now))
+
+
+def cache_load(key: str, ttl_seconds: int) -> Optional[dict]:
+    """Read shared JSON cache blob if not older than ttl_seconds."""
+    cutoff = time.time() - ttl_seconds
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT payload, updated_at FROM app_cache WHERE key = %s",
+            (key,),
+        )
+        row = cur.fetchone()
+    if not row or row[1] < cutoff:
+        return None
+    try:
+        import json as _json
+        return _json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+
+
+def cache_save(key: str, payload: dict) -> None:
+    import json as _json
+    now = time.time()
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO app_cache (key, payload, updated_at) VALUES (%s, %s, %s)
+            ON CONFLICT (key) DO UPDATE SET
+                payload = EXCLUDED.payload,
+                updated_at = EXCLUDED.updated_at
+        """, (key, _json.dumps(payload), now))
+
+
+def cache_clear(key: str) -> None:
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM app_cache WHERE key = %s", (key,))
 
 
 def get_recent_webhook_events(limit: int = 50) -> list[dict]:
