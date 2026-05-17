@@ -33,23 +33,12 @@ def get_tasks(team_id: str, user_id: int, page: int = 0, by: str = "assignees",
 
 
 def get_all_tasks(team_id: str, user_id: int) -> list[dict]:
-    """Fetch tasks where user is assignee (all statuses) or watcher (only handoff statuses)."""
+    """Fetch tasks where user is assignee (all statuses)."""
     tasks_by_id: dict[str, dict] = {}
 
-    # Full set of currently-assigned tasks
     page = 0
     while True:
         batch = get_tasks(team_id, user_id, page, by="assignees")
-        if not batch:
-            break
-        for t in batch:
-            tasks_by_id[t["id"]] = t
-        page += 1
-
-    # Watcher tasks limited to handoff status (user watches many tasks; full paginate too slow)
-    page = 0
-    while True:
-        batch = get_tasks(team_id, user_id, page, by="watchers", statuses=[HANDOFF_STATUS])
         if not batch:
             break
         for t in batch:
