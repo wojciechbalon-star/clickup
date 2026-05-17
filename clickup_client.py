@@ -72,7 +72,10 @@ def register_webhook(team_id: str, endpoint_url: str) -> dict:
     resp = requests.post(
         f"{BASE_URL}/team/{team_id}/webhook",
         headers=_headers(),
-        json={"endpoint": endpoint_url, "events": ["taskAssigneeUpdated"]},
+        json={
+            "endpoint": endpoint_url,
+            "events": ["taskAssigneeUpdated", "taskStatusUpdated"],
+        },
         timeout=15,
     )
     return resp.json()

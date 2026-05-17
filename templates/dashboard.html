@@ -47,6 +47,7 @@
   <h1>ClickUp Dashboard</h1>
   <div class="filters">
     <a href="/?days=30" class="{{ 'active' if days == 30 and not start else '' }}">30 dni</a>
+    <a href="/?days=60" class="{{ 'active' if days == 60 and not start else '' }}">60 dni</a>
     <a href="/?days=90" class="{{ 'active' if days == 90 and not start else '' }}">90 dni</a>
     <form method="get" action="/" class="date-form">
       <input type="date" name="start" value="{{ start }}" aria-label="Data od" required>
@@ -108,7 +109,10 @@
         data-task-id="{{ t.task_id }}"
         data-auto-iter="{{ note.auto_iterations }}"
         data-hidden="{{ '1' if note.hidden else '0' }}">
-      <td data-sort="{{ t.task_name|lower }}">{{ t.task_name }}</td>
+      <td data-sort="{{ t.task_name|lower }}">
+        <a href="https://app.clickup.com/t/{{ t.task_id }}" target="_blank" rel="noopener"
+           style="color:#7c3aed;text-decoration:none;">{{ t.task_name }}</a>
+      </td>
       <td data-sort="{{ t.date_created.timestamp() if t.date_created else 0 }}">{{ t.date_created.strftime('%Y-%m-%d') if t.date_created else '—' }}</td>
       <td data-sort="{{ t.deadline.timestamp() if t.deadline else 0 }}">{{ t.deadline.strftime('%Y-%m-%d') if t.deadline else '—' }}</td>
       <td data-sort="{{ t.first_handoff.timestamp() if t.first_handoff else 0 }}">{{ t.first_handoff.strftime('%Y-%m-%d') if t.first_handoff else '—' }}</td>

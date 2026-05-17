@@ -1,13 +1,23 @@
 import os
 import time
+from contextlib import contextmanager
 from typing import Optional
 import psycopg2
+from psycopg2 import pool
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+_pool = pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
 
+
+@contextmanager
 def _conn():
-    return psycopg2.connect(DATABASE_URL)
+    conn = _pool.getconn()
+    try:
+        with conn:
+            yield conn
+    finally:
+        _pool.putconn(conn)
 
 
 def init_db() -> None:
@@ -53,6 +63,11 @@ def init_db() -> None:
                 updated_at DOUBLE PRECISION
             )
         """)
+        # Trim old webhook_events on startup so the table doesn't grow forever.
+        cur.execute(
+            "DELETE FROM webhook_events WHERE received_at < %s",
+            (time.time() - 90 * 86400,),
+        )
 
 
 def get_note(task_id: str) -> dict:

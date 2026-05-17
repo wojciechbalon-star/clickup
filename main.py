@@ -150,7 +150,7 @@ def _build_metrics(days: int, start: Optional[str], end: Optional[str]) -> tuple
                dependencies=[Depends(require_auth)])
 async def dashboard(
     request: Request,
-    days: int = Query(default=30),
+    days: int = Query(default=60),
     start: Optional[str] = Query(default=None),
     end: Optional[str] = Query(default=None),
     show_hidden: int = Query(default=0),
@@ -266,7 +266,7 @@ async def clickup_webhook(request: Request):
             True, raw_str,
         )
 
-        if task_id:
+        if task_id and event_type == "taskAssigneeUpdated":
             db.process_assignee_event(
                 task_id=str(task_id),
                 before_id=int(before_id) if before_id is not None else None,
